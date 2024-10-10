@@ -3,7 +3,10 @@ import string
 import random
 import os
 
-from pymilvus import connections, utility, Collection, CollectionSchema, FieldSchema,DataType
+from elasticsearch import Elasticsearch
+from sentence_transformers import SentenceTransformer, models
+from sentence_transformers.cross_encoder import CrossEncoder
+
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from pymilvus import connections
 import streamlit as st
@@ -20,17 +23,12 @@ load_dotenv()
 api_key =           os.getenv("WATSONX_APIKEY",         None)
 ibm_cloud_url =     os.getenv("IBM_CLOUD_URL",          None)
 project_id =        os.getenv("PROJECT_ID",             None)
-host =          str(os.getenv("MILVUS_HOST",            None))
-port =              os.getenv("MILVUS_PORT",            None)
-server_pem_path =   os.getenv("MILVUS_SERVER_PEM_PATH", None)
-server_name =       os.getenv("MILVUS_SERVER_NAME",     None)
-user =              os.getenv("MILVUS_USER",            None)
-password =          os.getenv("MILVUS_PASSWORD",        None)
-emb_api_key =       os.getenv("EMB_WATSONX_APIKEY",     None)
-emb_ibm_cloud_url = os.getenv("EMB_IBM_CLOUD_URL",      None)
-emb_project_id =    os.getenv("EMB_PROJECT_ID",         None)
-emb_space_id =      os.getenv("EMB_SPACE_ID",           None)
-deployment_id =     os.getenv("EMB_DEPLOYMENT_ID",      None)
+watsonx_discovery_username=os.getenv("WATSONX_DISCOVERY_USERNAME", None)
+watsonx_discovery_password=os.getenv("WATSONX_DISCOVERY_PASSWORD", None)
+watsonx_discovery_url=os.getenv("WATSONX_DISCOVERY_URL", None)
+watsonx_discovery_port=os.getenv("WATSONX_DISCOVERY_PORT", None)
+watsonx_discovery_endpoint = watsonx_discovery_url+':'+watsonx_discovery_port
+
 if api_key is None or ibm_cloud_url is None or project_id is None:
     print("Ensure you copied the .env file that you created earlier into the same directory as this notebook")
 else:
@@ -38,12 +36,6 @@ else:
         "url": ibm_cloud_url,
         "apikey": api_key 
     }
-    emb_creds = {
-        "url": emb_ibm_cloud_url,
-        "apikey": emb_api_key 
-    }
-
-    client = APIClient(credentials=emb_creds, space_id=emb_space_id)
 
 #------connection
 @st.cache_resource
@@ -61,19 +53,21 @@ def connect_watsonx_llm(model_id_llm):
     project_id=project_id)
     return model
 
+
 @st.cache_data
-def connect_to_milvus():
-    print('connecting to milvus...')
-    connections.connect(
-        "default", 
-        host = host, 
-        port = port, 
-        secure=True, 
-        server_pem_path = server_pem_path,
-        server_name = server_name,
-        user = user,
-        password=password)
-    print("Milvus connected")
+def connect_to_wxdis():
+    print('connecting to watsonx discovery...')
+    es = Elasticsearch(
+        [watsonx_discovery_endpoint],
+        http_auth=(watsonx_discovery_username, watsonx_discovery_password),
+        verify_certs=False
+    )
+
+    if es.ping():
+        print("Connection to Elasticsearch successful")
+    else:
+        print("Connection to Elasticsearch failed")
+    return es
 
 @st.cache_data
 def read_pdf(uploaded_files):
@@ -96,14 +90,24 @@ def initiate_username():
     return 'a'+username
 
 #------create milvus database
-def create_milvus_db(collection_name):
-    item_id    = FieldSchema( name="id",         dtype=DataType.INT64,    is_primary=True, auto_id=True )
-    text       = FieldSchema( name="text",       dtype=DataType.VARCHAR,  max_length= 50000             )
-    embeddings = FieldSchema( name="embeddings", dtype=DataType.FLOAT_VECTOR,    dim=768                )
-    schema     = CollectionSchema( fields=[item_id, text, embeddings], description="Inserted policy from user", enable_dynamic_field=True )
-    collection = Collection( name=collection_name, schema=schema, using='default' )
-    return collection
+def create_watsonx_db(es, index_name1):
+    lab6_policy_dictionary = {
+    "mappings": {
+        "properties": {
+            "text_id": {"type": "text"},
+            "text": {"type": "text"},
+            "embeddings": {
+                "type": "dense_vector",
+                "dims": 768,
+                "index": True,
+                "similarity": "cosine"
+            }
+        }
+    }
+    }
 
+    es.indices.create(index=index_name1, body= lab6_policy_dictionary)
+    return lab6_policy_dictionary
 
 #----------split data using Langchain textspliter
 def import_text_splitter(chunk_size, chunk_overlap):
@@ -128,42 +132,53 @@ def split_text_with_overlap(text, chunk_size, overlap_size):
 
     return chunks
 
-def embedding_data(chunks, collection):
-    payload = {
-    'input_data': [
-        {
-            'values': [
-                chunks
-            ]
-        }
-    ]
-}   
-    reponse = client.deployments.score(deployment_id, payload)
-    ch  = [i[0] for i in reponse['predictions'][0]['values']]
-    emb = [i[1] for i in reponse['predictions'][0]['values']]
-    collection.insert([ch,emb])
-    collection.create_index(field_name="embeddings",\
-                        index_params={"metric_type":"IP","index_type":"IVF_FLAT","params":{"nlist":16384}})
-    return collection
+def get_model(model_name='airesearch/wangchanberta-base-att-spm-uncased', max_seq_length=768, condition=True):
+    if condition:
+        # model_name = 'airesearch/wangchanberta-base-att-spm-uncased'
+        # model_name = "hkunlp/instructor-large"
+        word_embedding_model = models.Transformer(model_name, max_seq_length=max_seq_length)
+        pooling_model = models.Pooling(word_embedding_model.get_word_embedding_dimension(),pooling_mode='cls') # We use a [CLS] token as representation
+        model = SentenceTransformer(modules=[word_embedding_model, pooling_model])
+    return model
 
+def embedding_data(chunks, index_name1, es):
+    embedder_model = get_model(model_name='kornwtp/simcse-model-phayathaibert', max_seq_length=768)
+    ch_list  = chunks
+    text_id_list = [str(i) for i in range(0, len(ch_list))]
+    embedding_list = [list(embed) for embed in embedder_model.encode(chunks)]
+
+    for text_id, text_ref, embedding in zip(text_id_list, ch_list, embedding_list):
+        table_dictionary_doc = {"text_id": text_id,
+                            "text": text_ref,
+                            "embeddings": embedding
+                        }
+        es.index(index=index_name1, body=table_dictionary_doc)
+    return es
 #----------embedding question + search in Milvus vector database
-def find_answer(question, collection):
-    payload = {
-    'input_data': [
-        {
-            'values': [
-                [question]
-            ]
+def search_vector(es, vector, index_name, vector_field):
+    vector_search = {
+        "field": vector_field,
+        "query_vector": vector,
+        "k":4,
+        "num_candidates": 1000
         }
-    ]
-}   
-    reponse = client.deployments.score(deployment_id, payload)   # embedding question
-    embedded_vector = [reponse['predictions'][0]['values'][0][1]]
-    print('embedding question...')
-    collection.load()           # query data from collection
-    hits = collection.search(data=embedded_vector, anns_field="embeddings", param={"metric":"IP","offset":0},
-                    output_fields=["text"], limit=15)
-    return hits
+    semantic_resp = es.search(index=index_name, knn=vector_search)
+    return semantic_resp
+
+def find_answer(es, search_index, embedder_model, question):
+    index_name = search_index
+    vector_field = 'embedding'
+    question_encode = [list(i) for i in embedder_model.encode([question])]
+    vector = question_encode[0]
+    # print(vector)
+    semantic_resp = search_vector(es,vector, index_name, vector_field)
+    #semantic_resp
+    list_of_reference_text = []    
+    for hit in semantic_resp['hits']['hits']:
+        list_of_reference_text.append(hit['_source']['text'])
+
+    return list_of_reference_text[0:2]
+
 
 #------upload pdf
 def format_pdf_reader(raw_data):
