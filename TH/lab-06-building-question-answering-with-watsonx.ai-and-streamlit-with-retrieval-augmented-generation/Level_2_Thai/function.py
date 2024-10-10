@@ -53,7 +53,6 @@ def connect_watsonx_llm(model_id_llm):
     return model
 
 
-@st.cache_data
 def connect_to_wxdis():
     print('connecting to watsonx discovery...')
     es = Elasticsearch(
@@ -104,8 +103,10 @@ def create_watsonx_db(es, index_name1):
         }
     }
     }
-
-    es.indices.create(index=index_name1, body= lab6_policy_dictionary)
+    try:
+        es.indices.create(index=index_name1, body= lab6_policy_dictionary)
+    except:
+        print('yo yo yo')
     return lab6_policy_dictionary
 
 #----------split data using Langchain textspliter
@@ -166,7 +167,7 @@ def search_vector(es, vector, index_name, vector_field):
 
 def find_answer(es, search_index, embedder_model, question):
     index_name = search_index
-    vector_field = 'embedding'
+    vector_field = 'embeddings'
     question_encode = [list(i) for i in embedder_model.encode([question])]
     vector = question_encode[0]
     # print(vector)

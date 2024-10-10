@@ -27,7 +27,7 @@ from function import (connect_to_wxdis,
 model_id_llm='meta-llama/llama-3-1-8b-instruct'
 model_id_emb="kornwtp/simcse-model-phayathaibert"
 embedder_model =  get_model(model_name= model_id_emb, max_seq_length=768)
-
+index_name = 'hr_thai_policy'
 
 
 # Most GENAI logs are at Debug level.
@@ -45,7 +45,7 @@ es = connect_to_wxdis()
 model_llm = connect_watsonx_llm(model_id_llm)
 
 handler = StdOutCallbackHandler()
-
+_ = create_watsonx_db(es, index_name)
 # Sidebar contents
 with st.sidebar:
     st.title("RAG App")
@@ -62,16 +62,16 @@ with st.sidebar:
 
 #===========================================================================================
 
-username = initiate_username()
+
 if uploaded_files := st.file_uploader("กรุณาเลีอกไฟล์ PDF", accept_multiple_files=True):
-    print('======',username,'======')
-    try:
-        _ = create_watsonx_db(es, username)
+    print('======',index_name,'======')
+    # try:
+    if 1==1:
         thai_text = read_pdf(uploaded_files)
         chunks = split_text_with_overlap(thai_text, 1000, 300)
         print('----- create new collection')
-        semantic_resp = embedding_data(chunks, username, es)
-    except:
+        semantic_resp = embedding_data(chunks, index_name, es)
+    # except:
         print('index already exist')
 else:
     print('dropped collection')
@@ -82,7 +82,7 @@ if uploaded_files :
         "ถามคำถามเกี่ยวกับเอกสารของคุณ:"
     ): 
         print('processing...')
-        hits = find_answer(es, username, embedder_model, user_question)
+        hits = find_answer(es, index_name, embedder_model, user_question)
         prompt = generate_prompt_th(user_question, str(hits))
         response = model_llm.generate_text(prompt)
         st.text_area(label="Model Response", value=response, height=300)
