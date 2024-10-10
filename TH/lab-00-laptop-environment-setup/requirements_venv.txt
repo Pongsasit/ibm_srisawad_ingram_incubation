@@ -19,3 +19,4 @@ ibm-watsonx-ai==1.0.4
 streamlit==1.35.0
 huggingface-hub==0.23.2
 sentence_transformers==2.7.0
+elasticsearch==8.13.0
