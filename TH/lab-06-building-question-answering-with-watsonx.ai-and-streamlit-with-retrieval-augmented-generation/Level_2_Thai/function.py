@@ -8,7 +8,6 @@ from sentence_transformers import SentenceTransformer, models
 from sentence_transformers.cross_encoder import CrossEncoder
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from pymilvus import connections
 import streamlit as st
 from dotenv import load_dotenv
 from ibm_watsonx_ai.client import APIClient
