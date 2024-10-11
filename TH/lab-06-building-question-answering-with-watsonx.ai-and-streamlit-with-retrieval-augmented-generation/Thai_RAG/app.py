@@ -87,4 +87,4 @@ if uploaded_files :
         response = model_llm.generate_text(prompt)
         st.text_area(label="Model Response", value=response, height=300)
         # display_hits_dataframe(hits)
-        st.text_area(label="Reference", value=str(hits), height=300)
+        st.write(hits)
