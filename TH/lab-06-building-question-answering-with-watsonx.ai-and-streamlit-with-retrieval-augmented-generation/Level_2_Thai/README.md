@@ -5,6 +5,5 @@ So I'm guessing you've been hearing a bit about watsonx. Well...now you can buil
 1. Open your terminal or console window
 2. cd into this lab's base directory
 3. Copy your .env file into this lab's base folder
-4. create `cert.pem` file
-5. Run the app by running the command `streamlit run app.py`.
+4. Run the app by running the command `streamlit run app.py`.
 
