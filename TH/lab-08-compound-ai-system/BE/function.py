@@ -182,7 +182,7 @@ def image_scoring_prompt(side, pic_string, chat_url, project_id, access_token):
         raise Exception("Non-200 response: " + str(response.text))
     
     data = response.json()
-    return  data, data['choices'][0]['message']['content']
+    return  data, data['score']
 
 def auto_ai_price_prediction(api_key, make, model, year, engine_fuel_type, engine_hp, engine_cylinder,
                             transmission_type, driven_wheels, number_of_doors, vehicle_size,

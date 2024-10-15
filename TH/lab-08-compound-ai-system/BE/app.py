@@ -23,7 +23,7 @@ from ibm_watson_machine_learning.metanames import GenTextParamsMetaNames as GenP
 #wx.discovery
 from function import search_vector, retreive_reference
 #wx.ai
-from function import send_to_watsonxai, generate_stream, auto_ai_price_prediction, image_scoring_prompt
+from function import send_to_watsonxai, generate_stream, auto_ai_price_prediction, image_scoring_prompt, final_scoring_function
 
 
 #common libs
@@ -129,9 +129,23 @@ def question_answer_streaming():
 @app.route('/price_prediction', methods=['POST'])
 def price_prediction():
     data = request.json
+    
+    required_fields = ["Make", "Model", "Year", "Engine Fuel Type", "Engine HP", 
+                       "Engine Cylinders", "Transmission Type", "Driven_Wheels", 
+                       "Number of Doors", "Vehicle Size", "Vehicle Style", 
+                       "highway MPG", "city mpg", "Popularity", "Years Of Manufacture", 
+                       "Front View Image", "Rear View Image", "Right View Image", 
+                       "Left View Image"]
+
+    # Check for required fields
+    for field in required_fields:
+        if field not in data:
+            return {'error': f'{field} is required'}, 400
+
+    # Extract data
     make = data["Make"]
     model = data["Model"]
-    year =  data["Year"]
+    year = data["Year"]
     engine_fuel_type = data["Engine Fuel Type"]
     engine_hp = data["Engine HP"]        
     engine_cylinder = data["Engine Cylinders"]
@@ -146,20 +160,27 @@ def price_prediction():
     age = data["Years Of Manufacture"]
     front_view_base64 = data["Front View Image"]
     rear_view_base64 = data["Rear View Image"]
-    right_view_base64 = data[ "Right View Image"]
+    right_view_base64 = data["Right View Image"]
     left_view_base64 = data["Left View Image"]
-    
-    response_autoai, value_autoai = auto_ai_price_prediction(api_key, make, model, year, engine_fuel_type, engine_hp, engine_cylinder,
-                            transmission_type, driven_wheels, number_of_doors, vehicle_size,
-                            vehicle_style, highway_mpg, city_mpg, popularity, age)
 
-    front_percent = image_scoring_prompt('front', front_view_base64, chat_url, project_id, access_token)
-    rear_percent = image_scoring_prompt('rear', rear_view_base64, chat_url, project_id, access_token)
-    right_percent = image_scoring_prompt('right', right_view_base64, chat_url, project_id, access_token)
-    left_percent = image_scoring_prompt('left', left_view_base64, chat_url, project_id, access_token)
+    try:
+        response_autoai, value_autoai = auto_ai_price_prediction(api_key, make, model, year, 
+            engine_fuel_type, engine_hp, engine_cylinder, transmission_type, 
+            driven_wheels, number_of_doors, vehicle_size, vehicle_style, 
+            highway_mpg, city_mpg, popularity, age)
 
-    prompt_scope = create_policy_question(question)
-    return Response(generate_stream(prompt_scope, loan_llm_model), content_type='text/event-stream')
+        rp_fr, front_result = image_scoring_prompt('front', front_view_base64, chat_url, project_id, access_token)
+        rp_re, back_result = image_scoring_prompt('rear', rear_view_base64, chat_url, project_id, access_token)
+        rp_ri, right_result = image_scoring_prompt('right', right_view_base64, chat_url, project_id, access_token)
+        rp_le, left_result = image_scoring_prompt('left', left_view_base64, chat_url, project_id, access_token)
+
+        estimate_thb = final_scoring_function(float(value_autoai), float(front_result), 
+                                               float(back_result), float(left_result), 
+                                               float(right_result))
+        return {'price': float(estimate_thb)}
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 
 if __name__ == '__main__':
     app.run(debug=False, port=8080, host="0.0.0.0")
