@@ -41,7 +41,7 @@ driven_wheels_options = data['Driven_Wheels']
 driven_wheels = st.selectbox('Choose an amount of driven wheel option:', driven_wheels_options)
 
 number_of_doors_options =data['Number of Doors']
-number_of_doors = st.selectbox('Choose an transmission type option:', number_of_doors_options)
+number_of_doors = st.selectbox('Choose an number of doors option:', number_of_doors_options)
 
 vehicle_size_options =data['Vehicle Size']
 vehicle_size = st.selectbox('Choose an vehicle size type option:', vehicle_size_options)
@@ -101,12 +101,12 @@ if st.button('Submit AutoAI Price Prediction'):
 
     # Send the JSON payload to the backend API
     try:
-        response = requests.post('http://localhost:8080/price_prediction', json=payload)
+        response = requests.post('http://127.0.0.1:8080/price_prediction', json=payload)
         
         if response.status_code == 200:
             st.success('Data sent to backend successfully!')
             response_data = response.json()
-            st.write('Backend Response:', response_data)
+            st.write('วงเงินประมาณการที่น่าจะได้:', response_data['price'])
         else:
             st.error(f'Error: {response.status_code} - {response.text}')
     except Exception as e:

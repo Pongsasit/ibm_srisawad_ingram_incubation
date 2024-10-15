@@ -1,6 +1,7 @@
 import os
 import csv
 import requests
+import http.client
 from requests.auth import HTTPBasicAuth
 import ast
 from dotenv import load_dotenv
@@ -163,24 +164,24 @@ def price_prediction():
     right_view_base64 = data["Right View Image"]
     left_view_base64 = data["Left View Image"]
 
-    try:
-        response_autoai, value_autoai = auto_ai_price_prediction(api_key, make, model, year, 
-            engine_fuel_type, engine_hp, engine_cylinder, transmission_type, 
-            driven_wheels, number_of_doors, vehicle_size, vehicle_style, 
-            highway_mpg, city_mpg, popularity, age)
+    # try:
+    response_autoai, value_autoai = auto_ai_price_prediction(api_key, make, model, year, 
+        engine_fuel_type, engine_hp, engine_cylinder, transmission_type, 
+        driven_wheels, number_of_doors, vehicle_size, vehicle_style, 
+        highway_mpg, city_mpg, popularity, age)
 
-        rp_fr, front_result = image_scoring_prompt('front', front_view_base64, chat_url, project_id, access_token)
-        rp_re, back_result = image_scoring_prompt('rear', rear_view_base64, chat_url, project_id, access_token)
-        rp_ri, right_result = image_scoring_prompt('right', right_view_base64, chat_url, project_id, access_token)
-        rp_le, left_result = image_scoring_prompt('left', left_view_base64, chat_url, project_id, access_token)
+    rp_fr, front_result = image_scoring_prompt('front', front_view_base64, chat_url, project_id, access_token)
+    rp_re, back_result = image_scoring_prompt('rear', rear_view_base64, chat_url, project_id, access_token)
+    rp_ri, right_result = image_scoring_prompt('right', right_view_base64, chat_url, project_id, access_token)
+    rp_le, left_result = image_scoring_prompt('left', left_view_base64, chat_url, project_id, access_token)
 
-        estimate_thb = final_scoring_function(float(value_autoai), float(front_result), 
-                                               float(back_result), float(left_result), 
-                                               float(right_result))
-        return {'price': float(estimate_thb)}
-    except Exception as e:
-        return {'error': str(e)}, 500
+    estimate_thb = final_scoring_function(float(value_autoai), float(front_result), 
+                                            float(back_result), float(left_result), 
+                                            float(right_result))
+    return {'price': float(estimate_thb)}
+    # except Exception as e:
+    #     return {'error': str(e)}, 500
 
 
 if __name__ == '__main__':
-    app.run(debug=False, port=8080, host="0.0.0.0")
+    app.run(debug=True, port=8080, host="0.0.0.0")

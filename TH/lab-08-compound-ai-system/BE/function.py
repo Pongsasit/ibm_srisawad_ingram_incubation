@@ -134,11 +134,29 @@ def final_scoring_function(price_predict, front_result, back_result, left_result
     left_price = divided_price*left_result
     right_price = divided_price*right_result
     sum_price = front_price+back_price+left_price+right_price
-    return sum_price*35
+    if sum_price > 1500000:
+        sum_price = 900000
 
-def image_scoring_prompt(side, pic_string, chat_url, project_id, access_token):
-    system_content = """You always answer the questions with json formatting using with 2 keys, score and reason. \n\nAny JSON tags must be wrapped in block quotes, for example ```{'score': '99', 'reason': 'all good'}```. You will be penalized for not rendering code in block quotes.\n\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. \nYour answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\n\nIf a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don'\''t know the answer to a question, please don'\''t share false information."""
-    user_message = f"""The side of the car is {side} side, Please 1. Classify what object is this 2. Give a score of 1-100 for the condition of the part of car when 0 is perfect 3. Do we need to change the parts, can fix, or it is all good. Please provide some descriptions\nAnswer in JSON with format {{'score': float, 'reason': str}}"""
+    return sum_price
+
+def image_scoring_prompt(side, pic_string64, chat_url, project_id, access_token):
+    image_data = base64.b64decode(pic_string64)
+    # Write the binary data to an image file
+    with open('test.jpeg', "wb") as image_file:
+        image_file.write(image_data)
+    
+    pic = open("test.jpeg","rb").read()
+    pic_base64 = base64.b64encode(pic)
+    pic_string = pic_base64.decode("utf-8")
+
+    system_content = """You always answer the questions with json formatting using with 2 keys, score and reason. \n\nAny JSON tags must be wrapped in block quotes, for example ```{'score': '99', 'reason': 'all good'}```. 
+    You will be penalized for not rendering code in block quotes.\n\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. \nYour answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\n\nIf a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don'\''t know the answer to a question, please don'\''t share false information."""
+    user_message = f"""The side of image of the car is {side} side, 
+    1. Give a score of 1-100 for the condition the side of the car when 100 is perfect 
+    2. Give the reason of the score. 
+    Answer in JSON with format ```{{'score': integer, 'reason': str}}```
+    """
+    print(user_message)
     body = {
        "messages": [
           {
@@ -182,7 +200,15 @@ def image_scoring_prompt(side, pic_string, chat_url, project_id, access_token):
         raise Exception("Non-200 response: " + str(response.text))
     
     data = response.json()
-    return  data, data['score']
+    print('__'*20)
+    print(data)
+    print('__'*20)
+    try:
+        dictionary_data = ast.literal_eval(data['choices'][0]['message']['content'].split('```')[1])
+    except:
+        dictionary_data = ast.literal_eval(data['choices'][0]['message']['content'])
+
+    return  dictionary_data, float(int(dictionary_data['score']))
 
 def auto_ai_price_prediction(api_key, make, model, year, engine_fuel_type, engine_hp, engine_cylinder,
                             transmission_type, driven_wheels, number_of_doors, vehicle_size,

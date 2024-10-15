@@ -4,8 +4,7 @@ from dotenv import load_dotenv
 import os
 import time
 
-load_dotenv()
-BE_ENDPOINT = os.getenv("BE_ENDPOINT") + '/question_answer_streaming'
+BE_ENDPOINT = 'http://127.0.0.1:8080' + '/question_answer_streaming'
 
 def get_response_streaming(data, endpoint='http://127.0.0.1:8001/question_answer_streaming'):
     payload = {'employee_question': data}
