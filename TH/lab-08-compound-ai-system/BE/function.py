@@ -12,11 +12,34 @@ from elasticsearch import Elasticsearch
 from sentence_transformers import SentenceTransformer, models
 from sentence_transformers.cross_encoder import CrossEncoder
 
-from nzpyida import IdaDataBase, IdaDataFrame
-
 from ibm_watson_machine_learning.foundation_models import Model
 from ibm_watson_machine_learning.metanames import GenTextParamsMetaNames as GenParams
+
 import time
+import ast
+import tempfile  # for PDF Download
+from langchain.document_loaders import PyPDFLoader
+import base64
+import http.client
+import json
+
+
+# Load environment variables
+load_dotenv()
+# Retrieve environment variables
+watsonx_api_key = os.getenv("WATSONX_APIKEY", None)
+ibm_cloud_url = os.getenv("IBM_CLOUD_URL", None)
+project_id = os.getenv("PROJECT_ID", None)
+ibm_cloud_iam_url = os.getenv("IAM_IBM_CLOUD_URL", None)
+chat_url = os.getenv("IBM_WATSONX_AI_INFERENCE_URL", None)
+api_key = os.getenv("API_KEY", None)
+# IBM Watson Discovery credentials
+watsonx_discovery_username = os.getenv("WATSONX_DISCOVERY_USERNAME", None)
+watsonx_discovery_password = os.getenv("WATSONX_DISCOVERY_PASSWORD", None)
+watsonx_discovery_url = os.getenv("WATSONX_DISCOVERY_URL", None)
+watsonx_discovery_port = os.getenv("WATSONX_DISCOVERY_PORT", None)
+watsonx_discovery_endpoint = f"{watsonx_discovery_url}:{watsonx_discovery_port}"
+
 
 def get_model(model_name='airesearch/wangchanberta-base-att-spm-uncased', max_seq_length=768, condition=True):
     if condition:
@@ -26,7 +49,6 @@ def get_model(model_name='airesearch/wangchanberta-base-att-spm-uncased', max_se
         pooling_model = models.Pooling(word_embedding_model.get_word_embedding_dimension(),pooling_mode='cls') # We use a [CLS] token as representation
         model = SentenceTransformer(modules=[word_embedding_model, pooling_model])
     return model
-
 
 def search_vector(es, vector, index_name, vector_field):
     vector_search = {
@@ -103,4 +125,110 @@ def send_to_watsonxai(model,
         o = model.generate_text(prompt)
         output.append(o)
     return output
+    
+
+def final_scoring_function(price_predict, front_result, back_result, left_result, right_result):
+    divided_price = (price_predict/4)
+    front_price = divided_price*front_result
+    back_price = divided_price*back_result
+    left_price = divided_price*left_result
+    right_price = divided_price*right_result
+    sum_price = front_price+back_price+left_price+right_price
+    return sum_price*35
+
+def image_scoring_prompt(side, pic_string, chat_url, project_id, access_token):
+    system_content = """You always answer the questions with json formatting using with 2 keys, score and reason. \n\nAny JSON tags must be wrapped in block quotes, for example ```{'score': '99', 'reason': 'all good'}```. You will be penalized for not rendering code in block quotes.\n\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. \nYour answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\n\nIf a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don'\''t know the answer to a question, please don'\''t share false information."""
+    user_message = f"""The side of the car is {side} side, Please 1. Classify what object is this 2. Give a score of 1-100 for the condition of the part of car when 0 is perfect 3. Do we need to change the parts, can fix, or it is all good. Please provide some descriptions\nAnswer in JSON with format {{'score': float, 'reason': str}}"""
+    body = {
+       "messages": [
+          {
+             "role": "system",
+             "content": system_content
+          },
+          {
+             "role": "user",
+             "content": [
+                {
+                   "type": "text",
+                   "text": user_message,
+                },
+                {
+                   "type": "image_url",
+                   "image_url": {
+                      "url": f"data:image/jpeg;base64, {pic_string}"
+                   }
+                }
+             ]
+          }
+       ],
+       "project_id": project_id,
+       "model_id": "meta-llama/llama-3-2-90b-vision-instruct",
+       "decoding_method": "greedy",
+       "repetition_penalty": 1.1,
+       "max_tokens": 900
+    }
+    headers = {
+    "Accept": "application/json",
+    "Content-Type": "application/json",
+    "Authorization": f"Bearer {access_token}"
+    }
+    response = requests.post(
+        chat_url,
+        headers=headers,
+        json=body
+    )
+    
+    if response.status_code != 200:
+        raise Exception("Non-200 response: " + str(response.text))
+    
+    data = response.json()
+    return  data, data['choices'][0]['message']['content']
+
+def auto_ai_price_prediction(api_key, make, model, year, engine_fuel_type, engine_hp, engine_cylinder,
+                            transmission_type, driven_wheels, number_of_doors, vehicle_size,
+                            vehicle_style, highway_mpg, city_mpg, popularity, age):
+    API_KEY = api_key
+    token_response = requests.post('https://iam.cloud.ibm.com/identity/token', data={"apikey":
+    API_KEY, "grant_type": 'urn:ibm:params:oauth:grant-type:apikey'})
+    mltoken = token_response.json()["access_token"]
+    header = {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + mltoken}
+    
+    payload_scoring = {"input_data": [{"fields": [
+                                "Make",
+                                "Model",
+                                "Year",
+                                "Engine Fuel Type",
+                                "Engine HP",
+                                "Engine Cylinders",
+                                "Transmission Type",
+                                "Driven_Wheels",
+                                "Number of Doors",
+                                "Vehicle Size",
+                                "Vehicle Style",
+                                "highway MPG",
+                                "city mpg",
+                                "Popularity",
+                                "Years Of Manufacture"
+                        ], "values": [[
+                                str(make),
+                                str(model),
+                                str(year),
+                                str(engine_fuel_type),
+                                str(engine_hp),
+                                str(engine_cylinder),
+                                str(transmission_type),
+                                str(driven_wheels),
+                                str(number_of_doors),
+                                str(vehicle_size),
+                                str(vehicle_style),
+                                str(highway_mpg),
+                                str(city_mpg),
+                                str(popularity),
+                                str(age)
+                        ]]}]}
+    response_scoring = requests.post('https://us-south.ml.cloud.ibm.com/ml/v4/deployments/car_price_prediction/predictions?version=2021-05-01', 
+                                     json=payload_scoring, headers={'Authorization': 'Bearer ' + mltoken})
+    data = response_scoring.json()
+    value = data['predictions'][0]['values'][0][0]
+    return data, value
     
