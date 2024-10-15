@@ -101,7 +101,7 @@ if st.button('Submit AutoAI Price Prediction'):
 
     # Send the JSON payload to the backend API
     try:
-        response = requests.post('http://localhost:8080/autoai', json=payload)
+        response = requests.post('http://localhost:8080/price_prediction', json=payload)
         
         if response.status_code == 200:
             st.success('Data sent to backend successfully!')

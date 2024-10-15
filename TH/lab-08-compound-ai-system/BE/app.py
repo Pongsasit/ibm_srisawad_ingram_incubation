@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import traceback
 import pandas as pd
 import itertools
+import json
 
 from flask import Flask, render_template, request, jsonify, Response
 
@@ -14,8 +15,6 @@ from elasticsearch import Elasticsearch
 from sentence_transformers import SentenceTransformer, models
 from sentence_transformers.cross_encoder import CrossEncoder
 
-#ibm ntz
-from nzpyida import IdaDataBase, IdaDataFrame
 
 #ibm watsonx
 from ibm_watson_machine_learning.foundation_models import Model
@@ -24,7 +23,7 @@ from ibm_watson_machine_learning.metanames import GenTextParamsMetaNames as GenP
 #wx.discovery
 from function import search_vector, retreive_reference
 #wx.ai
-from function import send_to_watsonxai, generate_stream
+from function import send_to_watsonxai, generate_stream, auto_ai_price_prediction, image_scoring_prompt
 
 
 #common libs
@@ -35,14 +34,29 @@ from prompt import create_policy_question
 app = Flask(__name__)
 # Elasticsearch endpoint with port
 load_dotenv()
-project_id = os.environ["PROJECT_ID"]
-ibm_cloud_url = os.environ["IBM_CLOUD_URL"]
-api_key = os.environ["API_KEY"]
-watsonx_discovery_username=os.environ["WATSONX_DISCOVERY_USERNAME"]
-watsonx_discovery_password=os.environ["WATSONX_DISCOVERY_PASSWORD"]
-watsonx_discovery_url=os.environ["WATSONX_DISCOVERY_URL"]
-watsonx_discovery_port=os.environ["WATSONX_DISCOVERY_PORT"]
-watsonx_discovery_endpoint = watsonx_discovery_url+':'+watsonx_discovery_port
+# Load environment variables
+load_dotenv()
+# Retrieve environment variables
+watsonx_api_key = os.getenv("WATSONX_APIKEY", None)
+ibm_cloud_url = os.getenv("IBM_CLOUD_URL", None)
+project_id = os.getenv("PROJECT_ID", None)
+ibm_cloud_iam_url = os.getenv("IAM_IBM_CLOUD_URL", None)
+chat_url = os.getenv("IBM_WATSONX_AI_INFERENCE_URL", None)
+api_key = os.getenv("API_KEY", None)
+# IBM Watson Discovery credentials
+watsonx_discovery_username = os.getenv("WATSONX_DISCOVERY_USERNAME", None)
+watsonx_discovery_password = os.getenv("WATSONX_DISCOVERY_PASSWORD", None)
+watsonx_discovery_url = os.getenv("WATSONX_DISCOVERY_URL", None)
+watsonx_discovery_port = os.getenv("WATSONX_DISCOVERY_PORT", None)
+watsonx_discovery_endpoint = f"{watsonx_discovery_url}:{watsonx_discovery_port}"
+conn_ibm_cloud_iam = http.client.HTTPSConnection(ibm_cloud_iam_url)
+payload = "grant_type=urn%3Aibm%3Aparams%3Aoauth%3Agrant-type%3Aapikey&apikey="+watsonx_api_key
+headers = { 'Content-Type': "application/x-www-form-urlencoded" }
+conn_ibm_cloud_iam.request("POST", "/identity/token", payload, headers)
+res = conn_ibm_cloud_iam.getresponse()
+data = res.read()
+decoded_json=json.loads(data.decode("utf-8"))
+access_token=decoded_json["access_token"]
 
 creds = {
         "url": ibm_cloud_url,
@@ -109,6 +123,41 @@ def question_answer_streaming():
     data = request.json
     question_to_be_guide = data["employee_question"]
     question = question_to_be_guide
+    prompt_scope = create_policy_question(question)
+    return Response(generate_stream(prompt_scope, loan_llm_model), content_type='text/event-stream')
+
+@app.route('/price_prediction', methods=['POST'])
+def price_prediction():
+    data = request.json
+    make = data["Make"]
+    model = data["Model"]
+    year =  data["Year"]
+    engine_fuel_type = data["Engine Fuel Type"]
+    engine_hp = data["Engine HP"]        
+    engine_cylinder = data["Engine Cylinders"]
+    transmission_type = data["Transmission Type"]
+    driven_wheels = data["Driven_Wheels"]
+    number_of_doors = data["Number of Doors"]
+    vehicle_size = data["Vehicle Size"]
+    vehicle_style = data["Vehicle Style"]
+    highway_mpg = data["highway MPG"]
+    city_mpg = data["city mpg"]
+    popularity = data["Popularity"]
+    age = data["Years Of Manufacture"]
+    front_view_base64 = data["Front View Image"]
+    rear_view_base64 = data["Rear View Image"]
+    right_view_base64 = data[ "Right View Image"]
+    left_view_base64 = data["Left View Image"]
+    
+    response_autoai, value_autoai = auto_ai_price_prediction(api_key, make, model, year, engine_fuel_type, engine_hp, engine_cylinder,
+                            transmission_type, driven_wheels, number_of_doors, vehicle_size,
+                            vehicle_style, highway_mpg, city_mpg, popularity, age)
+
+    front_percent = image_scoring_prompt('front', front_view_base64, chat_url, project_id, access_token)
+    rear_percent = image_scoring_prompt('rear', rear_view_base64, chat_url, project_id, access_token)
+    right_percent = image_scoring_prompt('right', right_view_base64, chat_url, project_id, access_token)
+    left_percent = image_scoring_prompt('left', left_view_base64, chat_url, project_id, access_token)
+
     prompt_scope = create_policy_question(question)
     return Response(generate_stream(prompt_scope, loan_llm_model), content_type='text/event-stream')
 
