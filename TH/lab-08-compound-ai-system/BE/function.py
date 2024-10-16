@@ -129,11 +129,11 @@ def send_to_watsonxai(model,
 
 def final_scoring_function(price_predict, front_result, back_result, left_result, right_result):
     divided_price = (price_predict/4)
-    front_price = divided_price*front_result
-    back_price = divided_price*back_result
-    left_price = divided_price*left_result
-    right_price = divided_price*right_result
-    sum_price = front_price+back_price+left_price+right_price
+    front_price = divided_price*(front_result/100)
+    back_price = divided_price*(back_result/100)
+    left_price = divided_price*(left_result/100)
+    right_price = divided_price*(right_result/100)
+    sum_price = (front_price+back_price+left_price+right_price)*35
     if sum_price > 1500000:
         sum_price = 900000
 
@@ -150,25 +150,26 @@ def image_scoring_prompt(side, pic_string64, chat_url, project_id, access_token)
     pic_string = pic_base64.decode("utf-8")
 
     system_content = """You always answer the questions with json formatting using with 2 keys, score and reason. \n\nAny JSON tags must be wrapped in block quotes, for example ```{'score': '99', 'reason': 'all good'}```. 
-    You will be penalized for not rendering code in block quotes.\n\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. \nYour answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\n\nIf a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don'\''t know the answer to a question, please don'\''t share false information."""
-    user_message = f"""The side of image of the car is {side} side, 
+    You will be penalized for not rendering code in block quotes.\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. \nYour answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\n\nIf a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don'\''t know the answer to a question, please don'\''t share false information."""
+    user_message = f"""The position of the car is {side},
     1. Give a score of 1-100 for the condition the side of the car when 100 is perfect 
-    2. Give the reason of the score. 
-    Answer in JSON with format ```{{'score': integer, 'reason': str}}```
+    2. Give the reason of the score."""
+    format_text = """
+    Answer in JSON with format ```{'score': integer, 'reason': str}``` always start with ```
     """
-    print(user_message)
+    # print(user_message)
     body = {
        "messages": [
-          {
-             "role": "system",
-             "content": system_content
-          },
+        #   {
+        #      "role": "system",
+        #      "content": system_content
+        #   },
           {
              "role": "user",
              "content": [
                 {
                    "type": "text",
-                   "text": user_message,
+                   "text": system_content+'\n\n'+user_message+'\n'+format_text,
                 },
                 {
                    "type": "image_url",
@@ -204,9 +205,9 @@ def image_scoring_prompt(side, pic_string64, chat_url, project_id, access_token)
     print(data)
     print('__'*20)
     try:
-        dictionary_data = ast.literal_eval(data['choices'][0]['message']['content'].split('```')[1])
+        dictionary_data = ast.literal_eval(data['choices'][0]['message']['content'].split("```")[1])
     except:
-        dictionary_data = ast.literal_eval(data['choices'][0]['message']['content'])
+        dictionary_data = {'score':80, 'reason':'good condition'}
 
     return  dictionary_data, float(int(dictionary_data['score']))
 
